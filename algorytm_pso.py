@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from typing import List, Tuple, Callable
+from typing import List, Tuple, Callable, Union
 from abc import ABC, abstractmethod
 
 # ==============================================================
@@ -169,7 +169,7 @@ class PSO(IOptimizationAlgorithm):
 # 4. FUNKCJE STATYSTYCZNE I RAPORTUJĄCE
 # ==============================================================
 
-def get_bounds(func_name: str, dim: int) -> List:
+def get_bounds(func_name: str, dim: int) -> Union[List[float], List[List[float]]]:
     """Zwraca granice dla danej funkcji testowej."""
     if func_name == "Rastrigin":
         return [-5.12, 5.12]
@@ -219,11 +219,15 @@ def run_tests(algorithm_class: type, func_data: List[Tuple[str, Callable, int, f
             if dim != 2:
                 raise ValueError(f"Bukin N.6 wymaga dokładnie 2 wymiarów, otrzymano {dim}")
             bounds_raw = get_bounds(func_name, dim)
+            # Bukin N.6 zwraca [[-15, -5], [-3, 3]]
+            if not isinstance(bounds_raw, list) or len(bounds_raw) != 2:
+                raise ValueError(f"get_bounds dla Bukin N.6 zwróciło nieprawidłowy format: {bounds_raw}")
             lb = np.array([bounds_raw[0][0], bounds_raw[1][0]])
             ub = np.array([bounds_raw[0][1], bounds_raw[1][1]])
         else:
             bounds_raw = get_bounds(func_name, dim)
-            if not isinstance(bounds_raw, list) or len(bounds_raw) != 2:
+            # Inne funkcje zwracają [lower, upper]
+            if not isinstance(bounds_raw, list) or len(bounds_raw) != 2 or isinstance(bounds_raw[0], list):
                 raise ValueError(f"get_bounds dla {func_name} zwróciło nieprawidłowy format: {bounds_raw}")
             lb = np.array([bounds_raw[0]] * dim)
             ub = np.array([bounds_raw[1]] * dim)
