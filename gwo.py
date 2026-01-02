@@ -248,6 +248,12 @@ def run_tests(algo_class: type[IOptimizationAlgorithm],
         lb = np.array([test_func_data['bounds'][0]] * dim)
         ub = np.array([test_func_data['bounds'][1]] * dim)
 
+        # Walidacja wymiarów dla funkcji 2D
+    if func_name == 'Beale' and dim != 2:
+        raise ValueError(f"Beale function wymaga dokładnie 2 wymiarów, otrzymano {dim}")
+    if func_name == 'Bukin N.6' and dim != 2:
+        raise ValueError(f"Bukin N.6 function wymaga dokładnie 2 wymiarów, otrzymano {dim}")
+
     if gwo_params is None:
         print("INFO: Używam domyślnych parametrów GWO (nie podano 'gwo_params')")
         gwo_params = {
@@ -327,20 +333,33 @@ if __name__ == "__main__":
     print("=== Testowanie algorytmu GWO ===\n")
     test_functions = get_test_functions()
 
-    POP_SIZE_N = 40
-    MAX_ITER_I = 60
-    N_RUNS = 10
+    POP_SIZE_N = 50
+    MAX_ITER_I = 100
+    N_RUNS = 5
 
-    func_name_1 = 'Rastrigin'
-    func_data_1 = test_functions[func_name_1]
-    dim_1 = 5
+    # Testowanie wybranych funkcji
+    test_combinations = [
+        ('Rosenbrock', [2, 5]),
+        ('Rastrigin', [2, 5]),
+        ('Sphere', [2, 5]),
+        ('Beale', [2]),
+        ('Bukin N.6', [2]),
+    ]
 
-    run_tests(
-        algo_class=GWO,
-        func_name=func_name_1,
-        test_func_data=func_data_1,
-        dim=dim_1,
-        pop_size=POP_SIZE_N,
-        max_iter=MAX_ITER_I,
-        n_runs=N_RUNS
-    )
+    for func_name, dims in test_combinations:
+        func_data = test_functions[func_name]
+        for dim in dims:
+            # Sprawdzenie czy wymiar jest w obsługiwanych wymiarach funkcji
+            if dim not in func_data['dim']:
+                print(f"UWAGA: Wymiar {dim} nie jest obsługiwany dla funkcji {func_name}. Pomijam.\n")
+                continue
+            
+            run_tests(
+                algo_class=GWO,
+                func_name=func_name,
+                test_func_data=func_data,
+                dim=dim,
+                pop_size=POP_SIZE_N,
+                max_iter=MAX_ITER_I,
+                n_runs=N_RUNS
+            )
