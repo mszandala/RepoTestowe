@@ -102,6 +102,10 @@ class PSO(IOptimizationAlgorithm):
         super().__init__()
         self.Name = "Particle Swarm Optimization"
         
+        # Walidacja wymiarów granic
+        if len(lb) != dim or len(ub) != dim:
+            raise ValueError(f"lb i ub muszą mieć długość równą dim ({dim}), otrzymano lb={len(lb)}, ub={len(ub)}")
+        
         self.obj_func = obj_func
         self.pop_size = pop_size
         self.dim = dim
@@ -186,7 +190,7 @@ def variability_measure(values: np.ndarray, expected_min: float) -> Tuple[float,
     if np.isclose(expected_min, 0.0, atol=1e-5) and np.isclose(mean, 0.0, atol=1e-3):
         return std, "Odchylenie Standardowe"
     elif mean == 0:
-        # zabezpieczeniee
+        # zabezpieczenie
         return std, "Odchylenie Standardowe (Mean=0)"
     else:
 
@@ -212,11 +216,15 @@ def run_tests(algorithm_class: type, func_data: List[Tuple[str, Callable, int, f
     for func_name, func, dim, expected_min in func_data:
         # Obsługa granic dla funkcji Bukin N.6
         if func_name == 'Bukin N.6':
+            if dim != 2:
+                raise ValueError(f"Bukin N.6 wymaga dokładnie 2 wymiarów, otrzymano {dim}")
             bounds_raw = get_bounds(func_name, dim)
             lb = np.array([bounds_raw[0][0], bounds_raw[1][0]])
             ub = np.array([bounds_raw[0][1], bounds_raw[1][1]])
         else:
             bounds_raw = get_bounds(func_name, dim)
+            if not isinstance(bounds_raw, list) or len(bounds_raw) != 2:
+                raise ValueError(f"get_bounds dla {func_name} zwróciło nieprawidłowy format: {bounds_raw}")
             lb = np.array([bounds_raw[0]] * dim)
             ub = np.array([bounds_raw[1]] * dim)
 
@@ -328,7 +336,7 @@ def format_results_table(results: List[dict]): #formatowanie tabelki cn
 if __name__ == '__main__':
     # === STAŁE DLA TESTÓW ===
     NUM_RUNS = 10 # Liczba powt
-    # par  wewnętrzne (P_1, P_k)
+    # parametry wewnętrzne (P_1, P_k)
     PSO_PARAMS = {'w': 0.5, 'c1': 1.5, 'c2': 1.5}  # Przykładowe w, c1, c2
 
     # Zakresy N (Rozmiar populacji) i I (Liczba iteracji)
