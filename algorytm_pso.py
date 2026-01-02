@@ -199,20 +199,17 @@ def variability_measure(values: np.ndarray, expected_min: float) -> Tuple[float,
 def run_tests(algorithm_class: type, func_data: List[Tuple[str, Callable, int, float]],
               num_runs: int = 10, num_particles: int = 20, max_iter: int = 30,
               pso_params: dict = None) -> List[dict]:
-
+    
     results = []
-
-    # Jeśli pso_params is None, użyć domyślnych wartości
+    
     if pso_params is None:
         pso_params = {'w': 0.7, 'c1': 1.5, 'c2': 1.5}
     
     w = pso_params.get('w', 0.7)
     c1 = pso_params.get('c1', 1.5)
     c2 = pso_params.get('c2', 1.5)
-
-    # Ustawienie seed dla powtarzalności w ramach sesji
-    np.random.seed(42)
-
+    
+    
     for func_name, func, dim, expected_min in func_data:
         # Obsługa granic dla funkcji Bukin N.6
         if func_name == 'Bukin N.6':
