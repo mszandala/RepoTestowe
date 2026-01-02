@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from typing import List, Tuple, Callable
+from abc import ABC, abstractmethod
 
 # ==============================================================
 # 1. FUNKCJE TESTOWE
@@ -46,53 +47,90 @@ class Particle:
 # 3. INTERFEJS I IMPLEMENTACJA ALGO (PSO)
 # ==============================================================
 
-# Definicja interfejsu
-class OptimizationAlgorithm:
-    Name: str
-    XBest: np.ndarray
-    FBest: float
-    NumberOfEvaluationFitnessFunction: int
+# Interfejs dla algorytmów optymalizacyjnych
+class IOptimizationAlgorithm(ABC):
+    def __init__(self):
+        self.name = "IOptimizationAlgorithm"
+        self.xbest = None
+        self.fbest = float('inf')
+        self._eval_count = 0
 
-    def Solve(self) -> float: #fbest zwraca to
-        raise NotImplementedError
+    @property
+    def Name(self) -> str:
+        return self.name
+    
+    @Name.setter
+    def Name(self, value: str):
+        self.name = value
 
-class PSO(OptimizationAlgorithm):
+    @property
+    def XBest(self) -> np.ndarray:
+        return self.xbest
+    
+    @XBest.setter
+    def XBest(self, value: np.ndarray):
+        self.xbest = value
+
+    @property
+    def FBest(self) -> float:
+        return self.fbest
+    
+    @FBest.setter
+    def FBest(self, value: float):
+        self.fbest = value
+
+    @property
+    def EvalCount(self) -> int:
+        return self._eval_count
+    
+    @EvalCount.setter
+    def EvalCount(self, value: int):
+        self._eval_count = value
+
+    @abstractmethod
+    def Solve(self) -> float:
+        pass
+
+class PSO(IOptimizationAlgorithm):
 
     # Parametry wewnętrzne (P_1, P_k) to w, c1, c2
 
-    def __init__(self, func: Callable[[np.ndarray], float], dim: int, bounds: List[Tuple[float, float]],
-                 num_particles: int = 20, max_iter: int = 30, w: float = 0.7, c1: float = 1.5, c2: float = 1.5):
-
-        self.Name = "PSO"
-        self.func = func
-        self.num_particles = num_particles
+    def __init__(self, obj_func: Callable[[np.ndarray], float], 
+                 dim: int, lb: np.ndarray, ub: np.ndarray,
+                 pop_size: int = 20, max_iter: int = 30, 
+                 w: float = 0.7, c1: float = 1.5, c2: float = 1.5):
+        super().__init__()
+        self.Name = "Particle Swarm Optimization"
+        
+        self.obj_func = obj_func
+        self.pop_size = pop_size
         self.dim = dim
         self.max_iter = max_iter
         self.w = w
         self.c1 = c1
         self.c2 = c2
-        self.bounds = bounds
-        self.NumberOfEvaluationFitnessFunction = 0
+        self.lb = lb
+        self.ub = ub
+        
+        # Konwersja lb, ub na bounds dla klasy Particle
+        self.bounds = [(lb[i], ub[i]) for i in range(dim)]
 
-        self.swarm = [Particle(dim, self.bounds) for _ in range(num_particles)]
+        self.swarm = [Particle(dim, self.bounds) for _ in range(pop_size)]
         self.global_best_position = self.swarm[0].position
         self.global_best_value = float('inf')
 
-        self.XBest = np.array([])
-        self.FBest = float('inf')
-
     def Solve(self) -> float:
-        self.NumberOfEvaluationFitnessFunction = 0
+        self.EvalCount = 0
 
         # Resetowanie w przypadku wielokrotnego uruchomienia
-        self.swarm = [Particle(self.dim, self.bounds) for _ in range(self.num_particles)]
+        self.swarm = [Particle(self.dim, self.bounds) for _ in range(self.pop_size)]
         self.global_best_position = self.swarm[0].position
         self.global_best_value = float('inf')
 
         for t in range(self.max_iter):
             for particle in self.swarm:
-                fitness = self.func(particle.position)
-                self.NumberOfEvaluationFitnessFunction += 1
+                fitness = self.obj_func(particle.position)
+                self.EvalCount += 1
 
                 # Aktualizacja najlepszej lokalnej pozycji cząstki
                 if fitness < particle.best_value:
@@ -116,10 +154,8 @@ class PSO(OptimizationAlgorithm):
                 particle.velocity = self.w * particle.velocity + cognitive + social
                 particle.position += particle.velocity
 
-                # ogr. do zakresów
-                for i in range(self.dim):
-                    low, high = self.bounds[i]
-                    particle.position[i] = np.clip(particle.position[i], low, high)
+                # Ograniczenie do zakresów używając np.clip
+                particle.position = np.clip(particle.position, self.lb, self.ub)
 
         self.XBest = self.global_best_position
         self.FBest = self.global_best_value
@@ -129,19 +165,19 @@ class PSO(OptimizationAlgorithm):
 # 4. FUNKCJE STATYSTYCZNE I RAPORTUJĄCE
 # ==============================================================
 
-def get_bounds(func_name: str, dim: int) -> List[Tuple[float, float]]:
+def get_bounds(func_name: str, dim: int) -> List:
     """Zwraca granice dla danej funkcji testowej."""
     if func_name == "Rastrigin":
-        return [(-5.12, 5.12)] * dim
+        return [-5.12, 5.12]
     elif func_name == "Rosenbrock":
-        return [(-2, 2)] * dim
+        return [-2, 2]
     elif func_name == "Sphere":
-        return [(-2, 2)] * dim
+        return [-2, 2]
     elif func_name == "Beale":
-        return [(-4.5, 4.5)] * dim
+        return [-4.5, 4.5]
     elif func_name == "Bukin N.6":
-        return [(-15, -5), (-3, 3)]
-    return [(-10, 10)] * dim
+        return [[-15, -5], [-3, 3]]
+    return [-10, 10]
 
 def variability_measure(values: np.ndarray, expected_min: float) -> Tuple[float, str]:
     mean = np.mean(values)
@@ -158,28 +194,48 @@ def variability_measure(values: np.ndarray, expected_min: float) -> Tuple[float,
 
 def run_tests(algorithm_class: type, func_data: List[Tuple[str, Callable, int, float]],
               num_runs: int = 10, num_particles: int = 20, max_iter: int = 30,
-              p_params: Tuple[float, float, float] = (0.7, 1.5, 1.5)) -> List[dict]:
+              pso_params: dict = None) -> List[dict]:
 
     results = []
 
-    w, c1, c2 = p_params
+    # Jeśli pso_params is None, użyć domyślnych wartości
+    if pso_params is None:
+        pso_params = {'w': 0.7, 'c1': 1.5, 'c2': 1.5}
+    
+    w = pso_params.get('w', 0.7)
+    c1 = pso_params.get('c1', 1.5)
+    c2 = pso_params.get('c2', 1.5)
 
     # Ustawienie seed dla powtarzalności w ramach sesji
     np.random.seed(42)
 
     for func_name, func, dim, expected_min in func_data:
-        bounds = get_bounds(func_name, dim)
+        # Obsługa granic dla funkcji Bukin N.6
+        if func_name == 'Bukin N.6':
+            bounds_raw = get_bounds(func_name, dim)
+            lb = np.array([bounds_raw[0][0], bounds_raw[1][0]])
+            ub = np.array([bounds_raw[0][1], bounds_raw[1][1]])
+        else:
+            bounds_raw = get_bounds(func_name, dim)
+            lb = np.array([bounds_raw[0]] * dim)
+            ub = np.array([bounds_raw[1]] * dim)
 
         # tablice do zbierania wyników z n powtórzeń
         f_best_runs = []
         x_best_runs = []
 
         for _ in range(num_runs):
-#stale parametryy
+            # Wywołanie algorytmu z nowymi parametrami
             algo = algorithm_class(
-                func=func, dim=dim, bounds=bounds,
-                num_particles=num_particles, max_iter=max_iter,
-                w=w, c1=c1, c2=c2
+                obj_func=func,
+                dim=dim,
+                lb=lb,
+                ub=ub,
+                pop_size=num_particles,
+                max_iter=max_iter,
+                w=w,
+                c1=c1,
+                c2=c2
             )
             algo.Solve()
             f_best_runs.append(algo.FBest)
@@ -273,7 +329,7 @@ if __name__ == '__main__':
     # === STAŁE DLA TESTÓW ===
     NUM_RUNS = 10 # Liczba powt
     # par  wewnętrzne (P_1, P_k)
-    P_PARAMS = (0.5, 1.5, 1.5) # Przykładowe w, c1, c2
+    PSO_PARAMS = {'w': 0.5, 'c1': 1.5, 'c2': 1.5}  # Przykładowe w, c1, c2
 
     # Zakresy N (Rozmiar populacji) i I (Liczba iteracji)
     N_VALUES = [10, 20, 40, 80]
@@ -326,7 +382,7 @@ if __name__ == '__main__':
                     num_runs=NUM_RUNS,
                     num_particles=num_particles,
                     max_iter=max_iter,
-                    p_params=P_PARAMS
+                    pso_params=PSO_PARAMS
                 )
                 all_results.extend(current_results)
 
