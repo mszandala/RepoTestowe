@@ -72,6 +72,12 @@ class GWO(IOptimizationAlgorithm):
 
         # Inicjalizacja pozycji wilków losowo
         positions = np.random.uniform(self.lb, self.ub, (self.pop_size, self.dim))
+        
+        # Inicjalizacja tablicy fitness
+        fitness = np.zeros(self.pop_size)
+        for i in range(self.pop_size):
+            fitness[i] = self.obj_func(positions[i])
+            self.EvalCount += 1
 
         # Inicjalizacja alpha, beta, delta (3 najlepsze wilki)
         alpha_score = float('inf')
@@ -85,23 +91,20 @@ class GWO(IOptimizationAlgorithm):
         for iter in range(self.max_iter):
             # Aktualizacja alpha, beta, delta
             for i in range(self.pop_size):
-                fitness_i = self.obj_func(positions[i])
-                self.EvalCount += 1
-                
-                if fitness_i < alpha_score:
+                if fitness[i] < alpha_score:
                     delta_score = beta_score
                     delta_pos = beta_pos.copy()
                     beta_score = alpha_score
                     beta_pos = alpha_pos.copy()
-                    alpha_score = fitness_i
+                    alpha_score = fitness[i]
                     alpha_pos = positions[i].copy()
-                elif fitness_i < beta_score:
+                elif fitness[i] < beta_score:
                     delta_score = beta_score
                     delta_pos = beta_pos.copy()
-                    beta_score = fitness_i
+                    beta_score = fitness[i]
                     beta_pos = positions[i].copy()
-                elif fitness_i < delta_score:
-                    delta_score = fitness_i
+                elif fitness[i] < delta_score:
+                    delta_score = fitness[i]
                     delta_pos = positions[i].copy()
             
             # Oblicz a (linearly decreases from a_coeff to 0)
@@ -142,6 +145,10 @@ class GWO(IOptimizationAlgorithm):
                         positions[i, j] = self.lb[j] + np.random.random() * (self.ub[j] - self.lb[j]) * 0.1
                     if positions[i, j] > self.ub[j]:
                         positions[i, j] = self.ub[j] - np.random.random() * (self.ub[j] - self.lb[j]) * 0.1
+                
+                # Oblicz fitness po aktualizacji pozycji
+                fitness[i] = self.obj_func(positions[i])
+                self.EvalCount += 1
             
             # Zapisz historię iteracji
             self.iteration_history.append(alpha_score)
@@ -155,11 +162,11 @@ class GWO(IOptimizationAlgorithm):
 def get_test_functions() -> dict:
     funcs = {}
 
-    def rastrin(x: np.ndarray) -> float:
+    def rastrigin(x: np.ndarray) -> float:
         n = len(x)
         return 10 * n + np.sum(x**2 - 10 * np.cos(2 * np.pi * x))
     funcs['Rastrigin'] = {
-        'func': rastrin,
+        'func': rastrigin,
         'dim': [2, 5, 10],
         'bounds': [-5.12, 5.12],
         'opt_f': 0.0
