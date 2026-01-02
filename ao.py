@@ -3,7 +3,6 @@ import time
 from abc import ABC, abstractmethod
 from scipy.special import gamma
 
-# Interfejs dla algorytmów
 class IOptimizationAlgorithm(ABC):
     def __init__(self):
         self.name = "IOptimizationAlgorithm"
@@ -160,23 +159,18 @@ class AO(IOptimizationAlgorithm):
         self.aquila_math = AquilaMath(dim, s=s, alpha=alpha, beta=beta, 
                                       delta=delta, big_u=big_u, omega=omega, r1=r1)
         
-        # Inicjalizacja populacji (linie 40-54 Aquila.cs)
-        self.population = np.random.uniform(lb, ub, (pop_size, dim))
-    
-    def _population_best(self) -> tuple[np.ndarray, float]:
-        """Znajdź najlepsze rozwiązanie w populacji (linie 57-79 Aquila.cs)"""
-        fitness_values = np.array([self.obj_func(ind) for ind in self.population])
-        self.EvalCount += self.pop_size
-        best_idx = np.argmin(fitness_values)
-        return self.population[best_idx].copy(), fitness_values[best_idx]
-    
-    def _mean_population(self) -> np.ndarray:
-        """Oblicz średnią pozycję populacji (linie 82-93 Aquila.cs)"""
-        return np.mean(self.population, axis=0)
+        # Historia iteracji do śledzenia konwergencji
+        self.iteration_history = []
     
     def _apply_bounds(self, vec: np.ndarray) -> np.ndarray:
-        """Zastosuj granice do wektora (linie 95-106 Aquila.cs)"""
-        return np.clip(vec, self.lb, self.ub)
+        """Zastosuj granice do wektora z reflection (jak w GWO)"""
+        vec_clipped = np.copy(vec)
+        for i in range(self.dim):
+            if vec_clipped[i] < self.lb[i]:
+                vec_clipped[i] = self.lb[i] + np.random.random() * (self.ub[i] - self.lb[i]) * 0.1
+            elif vec_clipped[i] > self.ub[i]:
+                vec_clipped[i] = self.ub[i] - np.random.random() * (self.ub[i] - self.lb[i]) * 0.1
+        return vec_clipped
     
     def Solve(self) -> float:
         """
@@ -186,28 +180,35 @@ class AO(IOptimizationAlgorithm):
             float: najlepsza znaleziona wartość funkcji celu
         """
         self.EvalCount = 0
+        self.iteration_history = []
         
-        # Reinicjalizacja populacji
-        self.population = np.random.uniform(self.lb, self.ub, (self.pop_size, self.dim))
+        # Inicjalizacja populacji
+        population = np.random.uniform(self.lb, self.ub, (self.pop_size, self.dim))
+        
+        # Inicjalizacja fitness dla każdego osobnika
+        fitness = np.zeros(self.pop_size)
+        for i in range(self.pop_size):
+            fitness[i] = self.obj_func(population[i])
+            self.EvalCount += 1
         
         # Znajdź początkowe najlepsze rozwiązanie
-        x_best, x_best_fitness = self._population_best()
+        best_idx = np.argmin(fitness)
+        x_best = population[best_idx].copy()
+        x_best_fitness = fitness[best_idx]
         
         T = self.max_iter
         
-        # Główna pętla optymalizacji (linie 118-185)
+        # Główna pętla optymalizacji
         for t in range(1, T + 1):
-            x_mean = self._mean_population()
+            x_mean = np.mean(population, axis=0)
             
+            # Aktualizacja każdego osobnika
             for i in range(self.pop_size):
-                x_current = self.population[i].copy()
-                current_fitness = self.obj_func(x_current)
-                self.EvalCount += 1
-                
+                x_current = population[i].copy()
                 rand = np.random.random()
                 candidate = None
                 
-                # Faza eksploracji vs eksploatacji (linie 134-159)
+                # Eksploracja vs eksploatacja
                 if t <= 2.0 / 3.0 * T:
                     # EXPLORATION PHASE
                     if rand <= 0.5:
@@ -216,7 +217,7 @@ class AO(IOptimizationAlgorithm):
                     else:
                         # Step 2: Narrowed Exploration
                         random_idx = np.random.randint(0, self.pop_size)
-                        x_random = self.population[random_idx]
+                        x_random = population[random_idx]
                         candidate = self.aquila_math.narrowed_exploration(x_best, x_random)
                 else:
                     # EXPLOITATION PHASE
@@ -227,18 +228,24 @@ class AO(IOptimizationAlgorithm):
                         # Step 4: Narrowed Exploitation
                         candidate = self.aquila_math.narrowed_exploitation(x_best, x_current, t, T)
                 
-                # Sprawdź i zaktualizuj (linie 161-181)
+                # Aplikuj granice i oceń kandydata
                 if candidate is not None:
                     candidate = self._apply_bounds(candidate)
                     candidate_fitness = self.obj_func(candidate)
                     self.EvalCount += 1
                     
-                    if candidate_fitness < current_fitness:
-                        self.population[i] = candidate
+                    # Aktualizacja osobnika jeśli lepszy
+                    if candidate_fitness < fitness[i]:
+                        population[i] = candidate
+                        fitness[i] = candidate_fitness
                         
+                        # Aktualizacja globalnego najlepszego
                         if candidate_fitness < x_best_fitness:
                             x_best = candidate.copy()
                             x_best_fitness = candidate_fitness
+            
+            # Zapisz historię iteracji
+            self.iteration_history.append(x_best_fitness)
         
         # Ustaw wyniki końcowe
         self.XBest = x_best
@@ -319,22 +326,8 @@ def run_tests(algo_class: type[IOptimizationAlgorithm],
               max_iter: int,
               n_runs: int = 10,
               ao_params: dict = None) -> dict:
-    """
-    Funkcja testująca algorytm AO na wybranej funkcji testowej
+    """Funkcja testująca algorytm AO na wybranej funkcji testowej"""
     
-    Args:
-        algo_class: klasa algorytmu (AO)
-        func_name: nazwa funkcji testowej
-        test_func_data: dane funkcji testowej
-        dim: wymiar problemu
-        pop_size: rozmiar populacji
-        max_iter: maksymalna liczba iteracji
-        n_runs: liczba uruchomień (domyślnie 10)
-        ao_params: parametry dla AO (domyślnie None - użyje wartości domyślnych)
-    
-    Returns:
-        dict: słownik z wynikami testów
-    """
     print("--- Uruchamianie testu ---")
     print(f"Algorytm: {algo_class.__name__}")
     print(f"Funkcja: {func_name}, Wymiar: {dim}")
@@ -352,14 +345,14 @@ def run_tests(algo_class: type[IOptimizationAlgorithm],
         lb = np.array([test_func_data['bounds'][0]] * dim)
         ub = np.array([test_func_data['bounds'][1]] * dim)
 
-    # Walidacja wymiarów dla funkcji 2D
+    # Walidacja wymiarów
     if func_name == 'Beale' and dim != 2:
-        raise ValueError(f"Beale function wymaga dokładnie 2 wymiarów, otrzymano {dim}")
+        raise ValueError(f"Beale wymaga dokładnie 2 wymiarów, otrzymano {dim}")
     if func_name == 'Bukin N.6' and dim != 2:
-        raise ValueError(f"Bukin N.6 function wymaga dokładnie 2 wymiarów, otrzymano {dim}")
+        raise ValueError(f"Bukin N.6 wymaga dokładnie 2 wymiarów, otrzymano {dim}")
 
     if ao_params is None:
-        print("INFO: Używam domyślnych parametrów AO (nie podano 'ao_params')")
+        print("INFO: Używam domyślnych parametrów AO")
         ao_params = {
             'alpha': 0.1,
             'delta': 0.1,
@@ -370,16 +363,10 @@ def run_tests(algo_class: type[IOptimizationAlgorithm],
             'r1': 10
         }
 
-    print(f"Parametry AO: alpha={ao_params.get('alpha', 0.1)}, delta={ao_params.get('delta', 0.1)}, "
-          f"s={ao_params.get('s', 0.01)}, beta={ao_params.get('beta', 1.5)}, "
-          f"big_u={ao_params.get('big_u', 0.00565)}, omega={ao_params.get('omega', 0.005)}, "
-          f"r1={ao_params.get('r1', 10)}")
-
     total_evals = 0
     start_time = time.time()
 
     for run in range(n_runs):
-        # Nowa instancja algorytmu dla każdego uruchomienia
         algo = algo_class(
             obj_func=test_func_data['func'],
             dim=dim,
@@ -387,13 +374,7 @@ def run_tests(algo_class: type[IOptimizationAlgorithm],
             ub=ub,
             pop_size=pop_size,
             max_iter=max_iter,
-            alpha=ao_params.get('alpha', 0.1),
-            delta=ao_params.get('delta', 0.1),
-            s=ao_params.get('s', 0.01),
-            beta=ao_params.get('beta', 1.5),
-            big_u=ao_params.get('big_u', 0.00565),
-            omega=ao_params.get('omega', 0.005),
-            r1=ao_params.get('r1', 10)
+            **ao_params
         )
 
         algo.Solve()
@@ -407,7 +388,6 @@ def run_tests(algo_class: type[IOptimizationAlgorithm],
     all_fbest_results = np.array(all_fbest_results)
     all_xbest_results = np.array(all_xbest_results)
 
-    # Obliczanie statystyk
     best_fitness_value = np.min(all_fbest_results)
     best_run_index = np.argmin(all_fbest_results)
     best_solution_vector = all_xbest_results[best_run_index, :]
@@ -418,28 +398,18 @@ def run_tests(algo_class: type[IOptimizationAlgorithm],
 
     print(f"\n--- Podsumowanie wyników (n={n_runs}) ---")
     print(f"| Czas (n={n_runs}): {end_time - start_time:.4f} s")
-    print(f"| Najlepszy wynik (funkcja celu): {best_fitness_value:.6e}")
-    print(f"| Najgorszy wynik (funkcja celu): {worst_fitness_value:.6e}")
-    print(f"| Odchylenie standardowe (funkcja celu): {std_dev_fitness:.6e}")
+    print(f"| Najlepszy wynik: {best_fitness_value:.6e}")
+    print(f"| Najgorszy wynik: {worst_fitness_value:.6e}")
+    print(f"| Odch. stand. (funkcja celu): {std_dev_fitness:.6e}")
     print(f"| Średnia liczba ewaluacji: {total_evals / n_runs:.2f}")
-    print("\n--- Najlepsze znalezione rozwiązanie ---")
-    print(f"Wektor X (rozwiązanie): {np.array2string(best_solution_vector, precision=6, suppress_small=True)}")
-    print(f"Odchylenie standardowe (parametry X): {np.array2string(std_dev_params, precision=6, suppress_small=True)}")
+    print(f"| Wektor X: {np.array2string(best_solution_vector, precision=6, suppress_small=True)}")
     print("------------------------------\n")
 
-    # Funkcja zwraca słownik z wynikami
     results_dict = {
         "func_name": func_name,
         "dim": dim,
         "pop_size": pop_size,
         "max_iter": max_iter,
-        "alpha": ao_params.get('alpha', 0.1),
-        "delta": ao_params.get('delta', 0.1),
-        "s": ao_params.get('s', 0.01),
-        "beta": ao_params.get('beta', 1.5),
-        "big_u": ao_params.get('big_u', 0.00565),
-        "omega": ao_params.get('omega', 0.005),
-        "r1": ao_params.get('r1', 10),
         "best_fitness": best_fitness_value,
         "worst_fitness": worst_fitness_value,
         "std_dev_fitness": std_dev_fitness,
@@ -454,19 +424,81 @@ if __name__ == "__main__":
     print("=== Testowanie algorytmu Aquila Optimizer (AO) ===\n")
     test_functions = get_test_functions()
 
-    POP_SIZE_N = 40
-    MAX_ITER_I = 60
+    POP_SIZE_N = 80
+    MAX_ITER_I = 150
     N_RUNS = 10
 
-    func_name_1 = 'Rastrigin'
+    # Test 1: Sphere
+    print("TEST 1: Sphere (dim=5)")
+    func_name_1 = 'Sphere'
     func_data_1 = test_functions[func_name_1]
     dim_1 = 5
-
     run_tests(
         algo_class=AO,
         func_name=func_name_1,
         test_func_data=func_data_1,
         dim=dim_1,
+        pop_size=POP_SIZE_N,
+        max_iter=MAX_ITER_I,
+        n_runs=N_RUNS
+    )
+
+    # Test 2: Rastrigin
+    print("TEST 2: Rastrigin (dim=5)")
+    func_name_2 = 'Rastrigin'
+    func_data_2 = test_functions[func_name_2]
+    dim_2 = 5
+    run_tests(
+        algo_class=AO,
+        func_name=func_name_2,
+        test_func_data=func_data_2,
+        dim=dim_2,
+        pop_size=POP_SIZE_N,
+        max_iter=MAX_ITER_I,
+        n_runs=N_RUNS
+    )
+
+    # Test 3: Rosenbrock
+    print("TEST 3: Rosenbrock (dim=5)")
+    func_name_3 = 'Rosenbrock'
+    func_data_3 = test_functions[func_name_3]
+    dim_3 = 5
+    run_tests(
+        algo_class=AO,
+        func_name=func_name_3,
+        test_func_data=func_data_3,
+        dim=dim_3,
+        pop_size=POP_SIZE_N,
+        max_iter=MAX_ITER_I,
+        n_runs=N_RUNS
+    )
+
+    # Test 4: Beale
+    print("TEST 4: Beale (dim=2)")
+    func_name_4 = 'Beale'
+    func_data_4 = test_functions[func_name_4]
+    dim_4 = 2
+    run_tests(
+        algo_class=AO,
+        func_name=func_name_4,
+        test_func_data=func_data_4,
+        dim=dim_4,
+        pop_size=POP_SIZE_N,
+        max_iter=MAX_ITER_I,
+        n_runs=N_RUNS
+    )
+
+    # Test 5: Bukin N.6
+    print("TEST 5: Bukin N.6 (dim=2)")
+    func_name_5 = 'Bukin N.6'
+    func_data_5 = test_functions[func_name_5]
+    dim_5 = 2
+    run_tests(
+        algo_class=AO,
+        func_name=func_name_5,
+        test_func_data=func_data_5,
+        dim=dim_5,
+     # Przy za małych wartościach algorytm nie znajduje minimum
         pop_size=POP_SIZE_N,
         max_iter=MAX_ITER_I,
         n_runs=N_RUNS
